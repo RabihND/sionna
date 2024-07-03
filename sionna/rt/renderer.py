@@ -324,7 +324,7 @@ def results_to_mitsuba_scene(scene, paths, show_paths, show_devices,
                 'type': 'cylinder',
                 'p0': s,
                 'p1': e,
-                'radius': 0.25,
+                'radius': 0.1,
                 'light': {
                     'type': 'area',
                     'radiance': {'type': 'rgb', 'value': path_color},

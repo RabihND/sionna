@@ -6,8 +6,10 @@
 Class that stores coverage map
 """
 
+import pickle
 import matplotlib.pyplot as plt
 import numpy as np
+import pymongo
 import tensorflow as tf
 from sionna.utils import expand_to_rank, log10
 from .utils import rotation_matrix, mitsuba_rectangle_to_world
@@ -122,6 +124,7 @@ class CoverageMap:
         self._cell_size = tf.cast(cell_size, self._rdtype)
         self._value = tf.cast(value, self._rdtype)
         self._transmitters = scene.transmitters
+        # print(f"Transmitters: {self._transmitters}")
         # Dict mapping names to index for transmitters
         self._tx_name_2_ind = {}
         for tx_ind, tx_name in enumerate(self._transmitters):
@@ -173,6 +176,7 @@ class CoverageMap:
         ######################################################################
         # [num_tx/num_rx/num_ris, 3]
         tx_pos = [tx.position for tx in scene.transmitters.values()]
+        tx_orientation = [tx.orientation for tx in scene.transmitters.values()]
         tx_pos = tf.stack(tx_pos, axis=0)
 
         rx_pos = [rx.position for rx in scene.receivers.values()]
@@ -219,6 +223,7 @@ class CoverageMap:
         ris_pos = tf.cast(tf.math.floor(ris_pos/self._cell_size), tf.int32)
 
         self._tx_pos = tx_pos
+        self._tx_orientation = tx_orientation
         self._rx_pos = rx_pos
         self._ris_pos = ris_pos
 
@@ -293,7 +298,7 @@ class CoverageMap:
         return self._value
 
     def show(self, tx=0, vmin=None, vmax=None,
-              show_tx=True, show_rx=False, show_ris=False):
+              show_tx=True,show_tx_orientation=False, show_rx=False, show_ris=False):
         r"""show(tx=0, vmin=None, vmax=None, show_tx=True)
 
         Visualizes a coverage map
@@ -316,6 +321,10 @@ class CoverageMap:
         show_tx : bool
             If set to `True`, then the position of the transmitter is shown.
             Defaults to `True`.
+
+        show_tx_orientation : bool
+            If set to `True`, then the orientation of the transmitter is shown. 
+            Defaults to `False`.
 
         show_rx : bool
             If set to `True`, then the position of the receivers is shown.
@@ -358,6 +367,15 @@ class CoverageMap:
         if show_tx:
             tx_pos = self._tx_pos[tx]
             fig.axes[0].scatter(*tx_pos, marker='P', c='r')
+
+            if show_tx_orientation:
+                # tx_orientation tf.Tensor([ 1.3114178  -0.01978755  0.        ], shape=(3,), dtype=float32)
+                tx_orientation = self._tx_orientation[tx]
+                # Calculate the direction vector for the arrow tf.Tensor([ 1.3114178  -0.01978755  0.        ], shape=(3,), dtype=float32) in rad
+                dir_x = np.cos(tx_orientation[0])*np.cos(tx_orientation[1])
+                dir_y = np.sin(tx_orientation[0])*np.cos(tx_orientation[1])
+                fig.axes[0].arrow(tx_pos[0], tx_pos[1], dir_x, dir_y, head_width=0.1, head_length=0.1, fc='r', ec='r')
+                
 
         if show_rx:
             for rx_pos in self._rx_pos:
@@ -542,6 +560,119 @@ class CoverageMap:
 
         return ue_pos
 
+    def get_cell_index(self, pos):
+        r"""get_cell_index(pos)
+
+        Get the cell index of a position in the coverage map
+
+        Input
+        -----
+        pos : [3], tf.float
+            Position :math:`(x,y,z)` [m] in the global coordinate system
+
+        Output
+        ------
+        : [2], tf.int
+            Cell index :math:`(i,j)` of the position in the coverage map
+        """
+
+        if (tf.rank(pos) != 1) or (tf.shape(pos)[0] != 3):
+            msg = "`pos` must be shaped as [x,y,z] (rank=1 and shape=[3])"
+            raise ValueError(msg)
+
+        pos = tf.cast(pos, self._rdtype)
+
+        # Move to local coordinate system
+        pos = pos - self._center
+        rot_gcs_2_cm = tf.transpose(rotation_matrix(self._orientation))
+        pos = tf.linalg.matvec(rot_gcs_2_cm, pos)
+
+        # Get cell index
+        pos = pos[:2] + self._size*0.5
+        pos = tf.cast(tf.math.floor(pos/self._cell_size), tf.int32)
+
+        return pos
+    
+    def get_value(self, pos):
+        r"""get_value(pos)
+
+        Get the value of the coverage map at a position
+
+        Input
+        -----
+        pos : [3], tf.float
+            Position :math:`(x,y,z)` [m] in the global coordinate system
+
+        Output
+        ------
+        : tf.float
+            Value of the coverage map at the position (linear scale)
+        """
+
+        if (tf.rank(pos) != 1) or (tf.shape(pos)[0] != 3):
+            msg = "`pos` must be shaped as [x,y,z] (rank=1 and shape=[3])"
+            raise ValueError(msg)
+
+        pos = tf.cast(pos, self._rdtype)
+
+        # Get cell index
+        pos = self.get_cell_index(pos)
+        # print(pos)
+
+
+        return self._value[:, pos[1], pos[0]]
+
+    
+    def to_mongo(self, collection, name="coverage_map"):
+        r"""to_mongo(collection, name)
+        Serializes the coverage map and related data to a MongoDB collection.
+
+        Parameters
+        ----------
+        collection : pymongo.collection.Collection
+            The MongoDB collection where the data will be stored.
+        name : str
+            The name of the dataset or configuration being saved.
+        """
+        # Ensure the MongoDB collection is provided
+        if not isinstance(collection, pymongo.collection.Collection):
+            raise ValueError("Invalid MongoDB collection provided.")
+
+        # convert the tensor data to binary for storage
+        data = self.as_tensor()
+        data_binary = pickle.dumps(data)
+        # Serialize data
+        post = {
+            "_id": name,
+            "data": data_binary,
+            # "center": self._center,  # Assuming TensorFlow tensors
+            # "orientation": self._orientation.numpy().tolist(),
+            # "size": self._size.numpy().tolist(),
+            # "cell_size": self._cell_size,
+            # "rdtype": str(self._rdtype),
+            # "tx_positions": [pos.numpy().tolist() for pos in self._tx_pos],
+            # "tx_orientations": [orient.numpy().tolist() for orient in self._tx_orientation],
+            # "rx_positions": [pos.numpy().tolist() for pos in self._rx_pos],
+            # "ris_positions": [pos.numpy().tolist() for pos in self._ris_pos],
+            "center": pickle.dumps(self._center),
+            "orientation": pickle.dumps(self._orientation),
+            "size": pickle.dumps(self._size),
+            "cell_size": pickle.dumps(self._cell_size),
+            "tx_number": pickle.dumps(self.num_tx),
+            "transmitters": list(self._transmitters.keys()),
+            "tx_positions": pickle.dumps(self._tx_pos),
+            "tx_orientations": pickle.dumps(self._tx_orientation),
+            "rx_positions": pickle.dumps(self._rx_pos),
+            "ris_positions": pickle.dumps(self._ris_pos),
+            "rdtype": str(self._rdtype),
+            # Include any other necessary data
+        }
+        # Insert data into MongoDB (overwrite if already exists)
+        collection.update_one({"_id": name}, {"$set": post}, upsert=True)
+        # Insert data into MongoDB
+        # collection.insert_one(data)
+        print(f"Coverage map data saved to MongoDB collection '{collection.name}'")
+        
     def to_world(self):
         r"""
         Returns the `to_world` transformation that maps a default Mitsuba

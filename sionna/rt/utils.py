@@ -548,6 +548,10 @@ def reflection_coefficient(eta, cos_theta):
     r_tm = tf.math.divide_no_nan(c-d, c+d)
     return r_te, r_tm
 
+def transmission_coefficient(eta, cos_theta):
+    
+    pass
+
 def paths_to_segments(paths):
     """
     Extract the segments corresponding to a set of ``paths``

@@ -80,6 +80,8 @@ class Antenna:
                 pattern = hw_dipole_pattern
             elif pattern=="tr38901":
                 pattern = tr38901_pattern
+            elif pattern=="vivaldi":
+                pattern = vivaldi_pattern
             else:
                 raise ValueError("Unknown antenna pattern")
 
@@ -678,6 +680,73 @@ def tr38901_pattern(theta, phi, slant_angle=0.0,
     a = 10**(a_db/10)
     c = tf.complex(tf.sqrt(a), tf.zeros_like(a))
     if polarization_model==1:
+        return polarization_model_1(c, theta, phi, slant_angle)
+    else:
+        return polarization_model_2(c, slant_angle)
+
+
+def vivaldi_pattern(theta, phi, slant_angle=0.0, polarization_model=2, dtype=tf.complex64):
+    r"""
+    Antenna pattern for a Vivaldi antenna.
+
+    Input
+    -----
+    theta: array_like, float
+        Zenith angles wrapped within [0, pi] [rad]
+
+    phi: array_like, float
+        Azimuth angles wrapped within [-pi, pi) [rad]
+
+    slant_angle: float
+        Slant angle of the linear polarization [rad].
+        A slant angle of zero means vertical polarization.
+
+    polarization_model: int, one of [1,2]
+        Polarization model to be used. Options `1` and `2`
+        refer to :func:`~sionna.rt.antenna.polarization_model_1`
+        and :func:`~sionna.rt.antenna.polarization_model_2`,
+        respectively.
+        Defaults to `2`.
+
+    dtype : tf.complex64 or tf.complex128
+        Datatype.
+        Defaults to `tf.complex64`.
+
+    Output
+    ------
+    c_theta: array_like, complex
+        Zenith pattern
+
+    c_phi: array_like, complex
+        Azimuth pattern
+    """
+    rdtype = dtype.real_dtype
+    theta = tf.cast(theta, rdtype)
+    phi = tf.cast(phi, rdtype)
+    slant_angle = tf.cast(slant_angle, rdtype)
+
+    # Wrap phi to [-PI,PI]
+    phi = tf.math.floormod(phi + PI, 2 * PI) - PI
+
+    if not theta.shape == phi.shape:
+        raise ValueError("theta and phi must have the same shape.")
+    if polarization_model not in [1, 2]:
+        raise ValueError("polarization_model must be 1 or 2")
+
+    # Vivaldi antenna specific parameters
+    theta_3db = tf.cast(30 / 180 * PI, rdtype)
+    phi_3db = tf.cast(60 / 180 * PI, rdtype)
+    a_max = 20
+    g_e_max = 10
+
+    # Vivaldi antenna pattern equations
+    a_v = -tf.minimum(12 * ((theta - PI / 2) / theta_3db) ** 2, a_max)
+    a_h = -tf.minimum(12 * (phi / phi_3db) ** 2, a_max)
+    a_db = -tf.minimum(-(a_v + a_h), a_max) + g_e_max
+    a = 10 ** (a_db / 10)
+    c = tf.complex(tf.sqrt(a), tf.zeros_like(a))
+
+    if polarization_model == 1:
         return polarization_model_1(c, theta, phi, slant_angle)
     else:
         return polarization_model_2(c, slant_angle)

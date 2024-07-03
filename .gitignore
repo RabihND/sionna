@@ -19,3 +19,8 @@ projects/
 nohup.out
 /*.obj
 dist/
+
+#Rabih
+sionna_env/
+data/*
+#!data/scene/

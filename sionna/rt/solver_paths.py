@@ -4108,7 +4108,7 @@ class SolverPaths(SolverBase):
         r"""
         Computes:
         - The direction of incidence and departure at every interaction points
-        ``k_i`` and ``k_r``
+        ``k_i`` and ``k_r`` and ``k_t`` (Refraction)
         - The length of each path segment ``distances``
         - The delays of each path
         - The angles of departure (``theta_t``, ``phi_t``) and arrival
