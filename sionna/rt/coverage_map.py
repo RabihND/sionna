@@ -617,7 +617,7 @@ class CoverageMap:
 
         # Get cell index
         pos = self.get_cell_index(pos)
-        # print(pos)
+        # print("Cell index: ", pos)
 
 
         return self._value[:, pos[1], pos[0]]

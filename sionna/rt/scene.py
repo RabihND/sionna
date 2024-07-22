@@ -1236,7 +1236,7 @@ class Scene:
                                  scene_max)
             cm_center = tf.cast([(scene_min[0] + scene_max[0])*0.5,
                                  (scene_min[1] + scene_max[1])*0.5,
-                                 1.5], dtype=self._rdtype)
+                                 1.2], dtype=self._rdtype) #change the ue height to 1.2m
             cm_size = tf.cast([(scene_max[0] - scene_min[0]),
                                (scene_max[1] - scene_min[1])],
                                 dtype=self._rdtype)

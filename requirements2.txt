@@ -1,0 +1,11 @@
+# tensorflow
+numpy
+scipy
+matplotlib
+importlib_resources
+mitsuba
+pythreejs
+ipywidgets
+ipydatawidgets
+jupyterlab-widgets
+pymongo

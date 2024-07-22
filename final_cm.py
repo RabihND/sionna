@@ -5,7 +5,8 @@
 import math
 import os
 import pymongo
-gpu_num = "0" # Use "" to use the CPU
+import gridfs
+gpu_num = "" # Use "" to use the CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_num}"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -32,7 +33,7 @@ matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import time
-import pandas as pd
+
 # Import Sionna RT components
 from sionna.constants import PI
 from sionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Camera ,LambertianPattern, DirectivePattern, BackscatteringPattern, Antenna, compute_gain,visualize, scene
@@ -65,7 +66,7 @@ scene.tx_array =PlanarArray(num_rows=1,
                             num_cols=1,
                             vertical_spacing=0.5,
                             horizontal_spacing=0.5,
-                            pattern="vivaldi",
+                            pattern="dipole",
                             polarization="VH") # vivaldi antenna
 scene.rx_array = PlanarArray(num_rows=1,
                             num_cols=1,
@@ -75,7 +76,7 @@ scene.rx_array = PlanarArray(num_rows=1,
                             polarization="cross") # dipole antenna
 
 # show the radiation pattern of the transmitter and receiver antennas
-show_antennas_pattern = True
+show_antennas_pattern = False
 
 if show_antennas_pattern:
     # Transmitting antenna
@@ -83,18 +84,19 @@ if show_antennas_pattern:
     # Show the radiation pattern of the transmitter (vertical, horizontal, 3D)
     fig_v, fig_h, fig_3d =visualize(scene.tx_array.antenna.patterns[1])
 
-    # # Receiving antenna
-    # scene.rx_array.show() # Show the antenna pattern
-    # # Show the radiation pattern of the receiver (vertical, horizontal, 3D)
-    # fig_v, fig_h, fig_3d =visualize(scene.rx_array.antenna.patterns[1])
+    # Receiving antenna
+    scene.rx_array.show() # Show the antenna pattern
+    # Show the radiation pattern of the receiver (vertical, horizontal, 3D)
+    fig_v, fig_h, fig_3d =visualize(scene.rx_array.antenna.patterns[1])
 
 
 # Define the transmitter and receiver devices
 # gNBs:
-tx_0 = Transmitter("tx_0", position=[6.5, 17.5, 2.1],orientation=[6*PI/4,0,0]) #vivaldi antenna
-
+tx_0 = Transmitter("tx_0", position=[10.8, 11.76, 2.1]) #vivaldi antenna
+tx_1 = Transmitter("tx_1", position=[6.5, 0.45, 2.1]) # vivaldi antenna
+tx_2 = Transmitter("tx_2", position=[15.36, 0.9, 2.1]) # vivaldi antenna
 # UEs:
-# rx_1 = Receiver("rx_1", position=[10.7, 16.4, 1.5])
+# rx_1 = Receiver("rx_1", position=[10.6, 5, 1.2])
 # if needed to point the transmitter towards the receiver
 # tx_0.look_at(rx_1)
 
@@ -102,7 +104,8 @@ tx_0 = Transmitter("tx_0", position=[6.5, 17.5, 2.1],orientation=[6*PI/4,0,0]) #
 # Add the transmitter and receiver to the scene
 # gNBs:
 scene.add(tx_0)
-
+scene.add(tx_1)
+scene.add(tx_2)
 # UEs:
 # scene.add(rx_1)
 
@@ -126,16 +129,16 @@ diffraction = True
 edge_diffraction = True
 scattering = True
 # Coverage map parameters
-max_depth = 5              # Maximum number of reflections default=32
-num_samples=20e6            # Number of rays default=1e6
-cm_cell_size = (0.2,0.2)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
-show_coverage_map = False
+max_depth = 16              # Maximum number of reflections default=32
+num_samples=10e6            # Number of rays default=1e6
+cm_cell_size = (0.1,0.1)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
+show_coverage_map = True
 # Scene Parameters
 scene.frequency = 3.31968e9 # scene frequency default=3.5e9
 Ptx = 0                     # Transmit power in dBm
 num_rb = 106                # Number of resource blocks 
 bandwidth_mhz = 40          # Bandwidth in MHz
-show_scene = False
+show_scene = True
 
 ##############################
 ## Compute the coverage map ##
@@ -149,63 +152,33 @@ cm = scene.coverage_map(max_depth=max_depth,
                         edge_diffraction=edge_diffraction,
                         los=los,
                         num_samples=num_samples,
-                        cm_cell_size=cm_cell_size,
-                        cm_center=[0,0,1.2],
-                        cm_orientation=[0,0,0],
-                        cm_size=[100,100]
-                        )
-print("{:^10} Coverage Map computed in {:.2f} seconds".format("DONE", time.time()-start_time))
+                        cm_cell_size=cm_cell_size)
+                        # cm_center=[0,0,1.2],
+                        # cm_orientation=[0,0,0],
+                        # cm_size=[21.25218, 18.5928 ])
+print("{:^10} Coverage Map computed in {}".format("DONE", time.strftime("%H:%M:%S", time.gmtime(time.time()-start_time))))
 
 # Get the coverage map data as a tensor
 data = cm.as_tensor()
-# # Insert the coverage map data to MongoDB
-# client = pymongo.MongoClient("mongodb://localhost:27017/")
-# db = client["coverage_map"]
-# collection = db["cm_data"]
-# collection.insert_one({"data": data.tolist()})
-# print("{:^10} Coverage Map data inserted to MongoDB".format("DONE"))
 
-print(f"Coverage map data type: {data.dtype}, shape: {data.shape}")
+# Test the coverage map data, by chck the value of at a specific point
+rx_pos = [10.6, 5, 1.2]
+rx_value = cm.get_value(rx_pos)
+value_db = 10 * tf.math.log(rx_value) / tf.math.log(10.0)
+
+print(f"Coverage map value at the receiver position {rx_pos}: {value_db} dB")
+
+# Insert the coverage map data to MongoDB
+client = pymongo.MongoClient("mongodb://localhost:27017/")
+db = client["coverage_map"]
+collection = db["cm_data"]
+cm.to_mongo(collection, "cm_data")
+
 
 # Show the coverage map
 if show_coverage_map:
     for i in range(num_tx):
-        cm_tx = cm.show(tx=i,show_tx=True, show_rx=True)                 
-
-# get rx_coordinates from csv file: data/coordinates_amp_vs_dist.csv
-rx_coordinates = pd.read_csv('data/coordinates_amp_vs_dist.csv')
-
-# Assuming rx_coordinates is a DataFrame and tx_0 is defined with a position attribute
-# Example DataFrame (replace with actual rx_coordinates)
-# rx_coordinates = pd.DataFrame({'X-axis': [0, 1, 2], 'Y-axis': [3, 4, 5]})
-
-tx_position = tx_0.position.numpy()
-
-rx_value_db_list = []
-rx_distance_list = []
-# Loop through each row in the DataFrame
-for index, row in rx_coordinates.iterrows():
-    rx_pos1 = [row['X-axis'], row['Y-axis'], 1.2]
-    rx_absolute_pos = [tx_position[0] - rx_pos1[0], tx_position[1] - rx_pos1[1], rx_pos1[2]]
-    rx_distance_list.append(math.sqrt((rx_absolute_pos[0]-tx_position[0])**2 + (rx_absolute_pos[1]-tx_position[1])**2 + (rx_absolute_pos[2]-tx_position[2])**2))
-    # Process rx_absolute_pos as needed
-    # print(rx_absolute_pos)  # Example action
-    rx_value = cm.get_value(rx_absolute_pos)
-
-    # en db
-    rx_value_db = 10*np.log10(rx_value)
-    rx_value_db_list.append(rx_value_db)
-    # print(f"Coverage map value in dB at the receiver position {rx_absolute_pos}: {rx_value_db}")
-
-
-# plot the received power vs distance
-plt.figure()
-plt.plot(rx_distance_list, rx_value_db_list)
-plt.xlabel('Distance (m)')
-plt.ylabel('Received Power (dB)')
-plt.title('Received Power vs Distance')
-plt.grid()
-
+        cm_tx = cm.show(tx=i,show_tx=True)                 
 
 
 # Render the scene
@@ -217,7 +190,5 @@ if show_scene:
 
 # show all the figures
 plt.show()
-
-
 
 

@@ -115,3 +115,13 @@ If you use this software, please cite it as:
     online = {https://arxiv.org/abs/2203.11854}
 }
 ```
+
+
+# Own README.md content
+
+## Docker commands
+```bash
+docker run --gpus all -it --rm -v .:/app -w /app nvcr.io/nvidia/tensorflow:24.06-tf2-py3
+
+docker run --gpus all -it --rm -v .:/app -w /app  --network="host" --name SionnaSimRT nvidia-tf-sim
+```

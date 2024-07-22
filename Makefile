@@ -17,7 +17,7 @@ lint:
 	pylint sionna/
 
 run-docker:
-	docker run -p 8888:8888 --privileged=true $(GPU) --env NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility --rm -it sionna
+	docker run -p 8888:8888 --privileged=true --gpus=all --env NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility -v .:/app -w /app  --rm -it --name SionnaSimRT sionna
 
 test: FORCE
 	cd test && pytest
