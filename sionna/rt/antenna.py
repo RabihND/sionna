@@ -726,27 +726,37 @@ def vivaldi_pattern(theta, phi, slant_angle=0.0, polarization_model=2, dtype=tf.
     slant_angle = tf.cast(slant_angle, rdtype)
 
     # Wrap phi to [-PI,PI]
-    phi = tf.math.floormod(phi + PI, 2 * PI) - PI
+    phi = tf.math.floormod(phi+PI, 2*PI)-PI
 
-    if not theta.shape == phi.shape:
+
+    if not theta.shape==phi.shape:
         raise ValueError("theta and phi must have the same shape.")
-    if polarization_model not in [1, 2]:
+    if polarization_model not in [1,2]:
         raise ValueError("polarization_model must be 1 or 2")
+   # Main lobe and beamwidths
+    theta_3db = tf.cast(25/180*PI, rdtype)  # Narrower beamwidth for theta
+    phi_3db = tf.cast(25/180*PI, rdtype)    # Similar beamwidth for phi
+    a_max = sla_v = 30
+    g_e_max = 8
 
-    # Vivaldi antenna specific parameters
-    theta_3db = tf.cast(30 / 180 * PI, rdtype)
-    phi_3db = tf.cast(60 / 180 * PI, rdtype)
-    a_max = 20
-    g_e_max = 10
+    # Elevation pattern (theta)
+    a_v = -tf.minimum(12*((theta-PI/2)/theta_3db)**2, sla_v)
+    # Azimuth pattern (phi)
+    a_h = -tf.minimum(12*(phi/phi_3db)**2, a_max)
 
-    # Vivaldi antenna pattern equations
-    a_v = -tf.minimum(12 * ((theta - PI / 2) / theta_3db) ** 2, a_max)
-    a_h = -tf.minimum(12 * (phi / phi_3db) ** 2, a_max)
+    # Combined gain
     a_db = -tf.minimum(-(a_v + a_h), a_max) + g_e_max
-    a = 10 ** (a_db / 10)
+    a = 10**(a_db/10)
     c = tf.complex(tf.sqrt(a), tf.zeros_like(a))
 
-    if polarization_model == 1:
+    # Sidelobe adjustment
+    # Introduce additional sidelobes
+    sidelobe_factor = 0.9 * tf.sin(4*theta) * tf.sin(4*phi)
+    sidelobe_factor = 10**(sidelobe_factor/10)
+    c = c + tf.complex(sidelobe_factor, tf.zeros_like(sidelobe_factor))
+
+
+    if polarization_model==1:
         return polarization_model_1(c, theta, phi, slant_angle)
     else:
         return polarization_model_2(c, slant_angle)

@@ -1,10 +1,9 @@
 import os
-gpu_num = "" # Use "" to use the CPU
+gpu_num = "0" # Use "" to use the CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_num}"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# Define the resolution of the renderings
-resolution = [1280,720] # increase for higher quality of renderings
+
 
 # Configure the notebook to use only a single GPU and allocate only as much memory as needed
 # For more details, see https://www.tensorflow.org/guide/gpu
@@ -16,14 +15,7 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-# for cpu , set memory growth to true
-
-cpu = tf.config.list_physical_devices('CPU')
-if cpu:
-    try:
-        tf.config.experimental.set_memory_growth(cpu[0], True)
-    except RuntimeError as e:
-        print(e)
+# for cpu , set memory growth to tru
 
 
 
@@ -70,7 +62,7 @@ scene.tx_array =PlanarArray(num_rows=1,
                             num_cols=1,
                             vertical_spacing=0.5,
                             horizontal_spacing=0.5,
-                            pattern="tr38901",
+                            pattern="dipole",
                             polarization="VH")
 scene.rx_array = PlanarArray(num_rows=1,
                             num_cols=1,
@@ -91,18 +83,20 @@ if show_antennas_pattern:
     fig_v, fig_h, fig_3d =visualize(scene.tx_array.antenna.patterns[1])
 
     # Receiving antenna
-    scene.rx_array.show() # Show the antenna pattern
-    # Show the radiation pattern of the receiver (vertical, horizontal, 3D)
-    fig_v, fig_h, fig_3d =visualize(scene.rx_array.antenna.patterns[1])
+    # scene.rx_array.show() # Show the antenna pattern
+    # # Show the radiation pattern of the receiver (vertical, horizontal, 3D)
+    # fig_v, fig_h, fig_3d =visualize(scene.rx_array.antenna.patterns[1])
 
 
+# plt.show()
+# exit()
 # Define the transmitter and receiver devices
 # tx_1 = Transmitter("tx", position=[4,2,9])
-tx_1 = Transmitter("tx", position=[5.8, 18.2, 2.1],orientation=[7*PI/4,0,0]) #vivaldi antenna
+tx_1 = Transmitter("tx", position=[10.8, 11.76, 2.1]) #vivaldi antenna
 # tx_2 = Transmitter("tx2", position=[4,-2,9])
 
 # rx = Receiver("rx", position=[-4,0,8])
-rx = Receiver("rx_1", position=[18.09,12.76,1.5])
+rx = Receiver("rx_1", position=[8.2,2.5,1.2])
 tx_1.look_at(rx)
 # tx_2.look_at(rx) # Point the transmitter towards the receiver (orientation of the transmitter)
 # Add the transmitter and receiver to the scene
@@ -123,16 +117,17 @@ print(f"Number of receiver antennas: {num_rx_ant}")
 
 # RT Effects (Diffraction, Reflection, Scattering, LOS)
 diffraction = True
-edge_diffraction = True
+edge_diffraction = False
 reflection = True
-scattering = True
+scattering = False
 los = True
-num_samples=1e6 # Number of rays default=1e6
-max_depth = 32
+num_samples=0.0001e6 # Number of rays default=1e6
+max_depth = 2
 cm_cell_size = (0.1,0.1) # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
 # Scene frequency
 scene.frequency = 3.31968e9 # default=3.5e9
-                
+# Define the resolution of the renderings
+resolution = [1280,720] # increase for higher quality of renderings
 
 # Compute the paths
 start_time = time.time()
@@ -140,7 +135,7 @@ paths = scene.compute_paths(max_depth=max_depth, los=los, reflection=reflection,
 print("{:^10} Paths computed in {:.2f} seconds".format("DONE", time.time()-start_time))
 
 
-
+paths.export("paths.obj")
 
 # Show the coordinates of the starting points of all rays.
 # These coincide with the location of the transmitters.
@@ -164,15 +159,18 @@ print("Number of paths: ", paths.types.shape[1])
 # # Let us inspect a specific path in detail 
 # path_idx = 0# Try out other values in the range [0, 13]
 
-# # For a detailed overview of the dimensions of all properties, have a look at the API documentation
-# print(f"\n--- Detailed results for path {path_idx} ---")
-# print(f"Channel coefficient (a): {paths.a[0,0,0,0,0,path_idx, 0].numpy()}")
-# print(f"Propagation delay (tau): {paths.tau[0,0,0,path_idx].numpy()*1e6:.5f} us")
-# print(f"Zenith angle of departure: {paths.theta_t[0,0,0,path_idx]:.4f} rad")
-# print(f"Azimuth angle of departure: {paths.phi_t[0,0,0,path_idx]:.4f} rad")
-# print(f"Zenith angle of arrival: {paths.theta_r[0,0,0,path_idx]:.4f} rad")
-# print(f"Azimuth angle of arrival: {paths.phi_r[0,0,0,path_idx]:.4f} rad")
-# print(f"Path type: {paths.types[0,path_idx].numpy()}")
+# # # For a detailed overview of the dimensions of all properties, have a look at the API documentation
+path_idx = [0,1]
+for i in path_idx:
+    print(f"\n--- Detailed results for path {i} ---")
+    print(f"Channel coefficient (a): {paths.a[0,0,0,0,0,i, 0].numpy()}")
+    print(f"Propagation delay (tau): {paths.tau[0,0,0,i].numpy()*1e9:.5f} ns")
+    print(f"Zenith angle of departure: {paths.theta_t[0,0,0,i]:.4f} rad")
+    print(f"Azimuth angle of departure: {paths.phi_t[0,0,0,i]:.4f} rad")
+    print(f"Zenith angle of arrival: {paths.theta_r[0,0,0,i]:.4f} rad")
+    print(f"Azimuth angle of arrival: {paths.phi_r[0,0,0,i]:.4f} rad")
+    print(f"Path type: {paths.types[0,i].numpy()}")
+
 
 
 Pr_db = 10*np.log10(tf.reduce_sum(tf.abs(paths.a)**2))
@@ -225,14 +223,14 @@ def calculate_rsrp(rssi_dbm, num_rb, bandwidth_mhz):
 rssi_dbm = Pr_db
 num_rb = 106
 bandwidth_mhz = 40
-rsrp = calculate_rsrp(rssi_dbm, num_rb, bandwidth_mhz)
-print(f"RSRP: {rsrp:.2f} dBm")
+# rsrp = calculate_rsrp(rssi_dbm, num_rb, bandwidth_mhz)
+# print(f"RSRP: {rsrp:.2f} dBm")
 
 
-# # Render the scene
-# print("{:^10} Rendering the scene...".format("WAIT"))
-# # scene.render_to_file(camera="scene-cam-0", filename="data/scene.png", resolution=[1280,720],num_samples=1000,show_devices=True,paths=paths,coverage_map=cm)
-# fig_scene = scene.render(camera="scene-cam-0", resolution=[1280,720],num_samples=1000,show_devices=True,paths=paths)
-# print("{:^10} Scene rendered".format("DONE"))
-# # Show all the figures
-# plt.show()
+# Render the scene
+print("{:^10} Rendering the scene...".format("WAIT"))
+# scene.render_to_file(camera="scene-cam-0", filename="data/scene.png", resolution=[1280,720],num_samples=1000,show_devices=True,paths=paths,coverage_map=cm)
+fig_scene = scene.render(camera="scene-cam-1", resolution=[1280,720],num_samples=4096,show_devices=True,paths=paths)
+print("{:^10} Scene rendered".format("DONE"))
+# Show all the figures
+plt.show()

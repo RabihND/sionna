@@ -5,7 +5,7 @@
 import math
 import os
 import pymongo
-gpu_num = "0" # Use "" to use the CPU
+gpu_num = "" # Use "" to use the CPU
 os.environ["CUDA_VISIBLE_DEVICES"] = f"{gpu_num}"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -44,6 +44,10 @@ from sionna.utils import compute_ber, ebnodb2no, PlotBER
 from sionna.ofdm import KBestDetector, LinearDetector
 from sionna.mimo import StreamManagement
 from helpers.functions import calculate_rsrp
+import sys
+import time
+from plyer import notification
+
 
 ################################
 ### Start of the main script ###
@@ -66,7 +70,7 @@ scene.tx_array =PlanarArray(num_rows=1,
                             vertical_spacing=0.5,
                             horizontal_spacing=0.5,
                             pattern="vivaldi",
-                            polarization="VH") # vivaldi antenna
+                            polarization="VH") # vivaldi antenna or tr38901
 scene.rx_array = PlanarArray(num_rows=1,
                             num_cols=1,
                             vertical_spacing=0.5,
@@ -75,11 +79,11 @@ scene.rx_array = PlanarArray(num_rows=1,
                             polarization="cross") # dipole antenna
 
 # show the radiation pattern of the transmitter and receiver antennas
-show_antennas_pattern = True
+show_antennas_pattern = False
 
 if show_antennas_pattern:
     # Transmitting antenna
-    scene.tx_array.show() # Show the antenna pattern
+    # scene.tx_array.show() # Show the antenna pattern
     # Show the radiation pattern of the transmitter (vertical, horizontal, 3D)
     fig_v, fig_h, fig_3d =visualize(scene.tx_array.antenna.patterns[1])
 
@@ -91,7 +95,7 @@ if show_antennas_pattern:
 
 # Define the transmitter and receiver devices
 # gNBs:
-tx_0 = Transmitter("tx_0", position=[6.5, 17.5, 2.1],orientation=[6*PI/4,0,0]) #vivaldi antenna
+tx_0 = Transmitter("tx_0", position=[6.5, 17.5, 2.1],orientation=[6*PI/4,PI/18,0]) #vivaldi antenna
 
 # UEs:
 # rx_1 = Receiver("rx_1", position=[10.7, 16.4, 1.5])
@@ -126,9 +130,9 @@ diffraction = True
 edge_diffraction = True
 scattering = True
 # Coverage map parameters
-max_depth = 5              # Maximum number of reflections default=32
-num_samples=20e6            # Number of rays default=1e6
-cm_cell_size = (0.2,0.2)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
+max_depth = 16            # Maximum number of reflections default=32
+num_samples=10e6            # Number of rays default=1e6
+cm_cell_size = (0.1,0.1)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
 show_coverage_map = False
 # Scene Parameters
 scene.frequency = 3.31968e9 # scene frequency default=3.5e9
@@ -150,11 +154,17 @@ cm = scene.coverage_map(max_depth=max_depth,
                         los=los,
                         num_samples=num_samples,
                         cm_cell_size=cm_cell_size,
-                        cm_center=[0,0,1.2],
-                        cm_orientation=[0,0,0],
-                        cm_size=[100,100]
+                        # cm_center=[0,0,1.2],
+                        # cm_orientation=[0,0,0],
+                        # cm_size=[100,100]
                         )
 print("{:^10} Coverage Map computed in {:.2f} seconds".format("DONE", time.time()-start_time))
+
+
+# notification.notify(
+#     title = "Finished executing "+sys.argv[0],
+#     message = "Successful",
+# )
 
 # Get the coverage map data as a tensor
 data = cm.as_tensor()
@@ -170,7 +180,7 @@ print(f"Coverage map data type: {data.dtype}, shape: {data.shape}")
 # Show the coverage map
 if show_coverage_map:
     for i in range(num_tx):
-        cm_tx = cm.show(tx=i,show_tx=True, show_rx=True)                 
+        cm_tx = cm.show(tx=i,show_tx=True, show_rx=False)                 
 
 # get rx_coordinates from csv file: data/coordinates_amp_vs_dist.csv
 rx_coordinates = pd.read_csv('data/coordinates_amp_vs_dist.csv')
@@ -197,14 +207,37 @@ for index, row in rx_coordinates.iterrows():
     rx_value_db_list.append(rx_value_db)
     # print(f"Coverage map value in dB at the receiver position {rx_absolute_pos}: {rx_value_db}")
 
+# save to json file 
+import json
+
+def default_encoder(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
+data = {"distance": rx_distance_list, "mean_power_db": rx_value_db_list}
+with open('amp_vs_dist_s.json', 'w') as file:
+    json.dump(data, file, default=default_encoder)
+
+
+
 
 # plot the received power vs distance
 plt.figure()
 plt.plot(rx_distance_list, rx_value_db_list)
-plt.xlabel('Distance (m)')
-plt.ylabel('Received Power (dB)')
-plt.title('Received Power vs Distance')
+plt.xlabel('Distance [m]')
+plt.ylabel('Perte de chemin [dB]')
 plt.grid()
+
+# mean_power_db_s = [item for sublist in mean_power_db_s for item in sublist]
+rx_value_db_list = [item for sublist in rx_value_db_list for item in sublist]
+coefficients = np.polyfit(rx_distance_list, rx_value_db_list, 1)
+polynomial = np.poly1d(coefficients)
+regression_line_s = polynomial(rx_distance_list)
+
+m = coefficients[0]
+b = coefficients[1]
+equation = f"y = {m:.2f}x + {b:.2f}"
+print(f"Regression line equation: {equation}")
 
 
 

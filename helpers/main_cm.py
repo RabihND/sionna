@@ -43,7 +43,7 @@ from sionna.nr import PUSCHConfig, PUSCHTransmitter, PUSCHReceiver
 from sionna.utils import compute_ber, ebnodb2no, PlotBER
 from sionna.ofdm import KBestDetector, LinearDetector
 from sionna.mimo import StreamManagement
-from functions import calculate_rsrp
+from helpers.functions import calculate_rsrp
 
 ################################
 ### Start of the main script ###
@@ -60,19 +60,19 @@ for i, obj in enumerate(scene.objects.values()):
 print("-"*30)
 
 
-# Define the transmitter and receiver arrays (All transmitters share the same antenna array configuration.)
+# Define the transmitter and receiver arrays
 scene.tx_array =PlanarArray(num_rows=1,
                             num_cols=1,
                             vertical_spacing=0.5,
                             horizontal_spacing=0.5,
-                            pattern="tr38901",
-                            polarization="VH") # vivaldi antenna
+                            pattern="dipole",
+                            polarization="VH")
 scene.rx_array = PlanarArray(num_rows=1,
                             num_cols=1,
                             vertical_spacing=0.5,
                             horizontal_spacing=0.5,
                             pattern="dipole",
-                            polarization="cross") # dipole antenna
+                            polarization="cross")
 
 # show the radiation pattern of the transmitter and receiver antennas
 show_antennas_pattern = False
@@ -89,37 +89,32 @@ if show_antennas_pattern:
     fig_v, fig_h, fig_3d =visualize(scene.rx_array.antenna.patterns[1])
 
 
+# plt.show()
+# exit()
 # Define the transmitter and receiver devices
-# gNBs:
-tx_0 = Transmitter("tx_0", position=[5.8, 18.2, 2.1],orientation=[7*PI/4,0,0]) #vivaldi antenna
-tx_1 = Transmitter("tx_1", position=[20.9, 18.2, 2.1],orientation=[5*PI/4,0,0]) # vivaldi antenna
-tx_2 = Transmitter("tx_2", position=[15.2, 0.5, 2.1],orientation=[3*PI/4,0,0]) # vivaldi antenna
-# UEs:
-rx_1 = Receiver("rx_1", position=[10.7, 16.4, 1.5])
-# if needed to point the transmitter towards the receiver
-# tx_0.look_at(rx_1)
+# tx_1 = Transmitter("tx", position=[4,2,9])
+tx_1 = Transmitter("tx", position=[10.8, 11.76, 2.1]) #vivaldi antenna
+# tx_2 = Transmitter("tx2", position=[4,-2,9])
 
-
+# rx = Receiver("rx", position=[-4,0,8])
+rx = Receiver("rx_1", position=[8.2,2.5,1.2])
+tx_1.look_at(rx)
+# tx_2.look_at(rx) # Point the transmitter towards the receiver (orientation of the transmitter)
 # Add the transmitter and receiver to the scene
-# gNBs:
-scene.add(tx_0)
 scene.add(tx_1)
-scene.add(tx_2)
-# UEs:
-scene.add(rx_1)
+# scene.add(tx_2)
+scene.add(rx)
 
-# Information about the scene Radio objects
+#
 num_tx = len(list(scene.transmitters.values()))
 num_rx = len(list(scene.receivers.values()))
 num_tx_ant = scene.tx_array.array_size
 num_rx_ant = scene.rx_array.array_size
-print("Radio objects in the scene:\n"+"-"*30)
+
 print(f"Number of transmitters: {num_tx}")
 print(f"Number of receivers: {num_rx}")
 print(f"Number of transmitter antennas: {num_tx_ant}")
-print(f"Number of receiver antennas: {num_rx_ant}\n"+"-"*30)
-
-
+print(f"Number of receiver antennas: {num_rx_ant}")
 # Variables for the coverage map
 # RT parameters
 los = True
@@ -128,10 +123,10 @@ diffraction = True
 edge_diffraction = True
 scattering = True
 # Coverage map parameters
-max_depth = 32              # Maximum number of reflections default=32
-num_samples=10e6            # Number of rays default=1e6
-cm_cell_size = (0.1,0.1)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
-show_coverage_map = False
+max_depth = 5              # Maximum number of reflections default=32
+num_samples=0.1e6            # Number of rays default=1e6
+cm_cell_size = (0.2,0.2)    # cell size in meters i.e.(0.5m x 0.5m) (affect the resolution of the coverage map)
+show_coverage_map = True
 # Scene Parameters
 scene.frequency = 3.31968e9 # scene frequency default=3.5e9
 Ptx = 0                     # Transmit power in dBm
@@ -154,57 +149,19 @@ cm = scene.coverage_map(max_depth=max_depth,
                         cm_cell_size=cm_cell_size)
 print("{:^10} Coverage Map computed in {:.2f} seconds".format("DONE", time.time()-start_time))
 
-# Get the coverage map data as a tensor
-data = cm.as_tensor()
-# Insert the coverage map data to MongoDB
-client = pymongo.MongoClient("mongodb://localhost:27017/")
-db = client["coverage_map"]
-collection = db["cm_data"]
-collection.insert_one({"data": data.tolist()})
-print("{:^10} Coverage Map data inserted to MongoDB".format("DONE"))
-
-print(f"Coverage map data type: {data.dtype}, shape: {data.shape}")
-
 # Show the coverage map
 if show_coverage_map:
     for i in range(num_tx):
         cm_tx = cm.show(tx=i,show_tx=True, show_rx=True)                 
 
-# Some statistics about the coverage map
-rx_pos = scene.receivers["rx_1"].position
-rx_value = cm.get_value(rx_pos)
+#
+# show all the figures
+plt.show()
 
-# en db
-rx_value_db = 10*np.log10(rx_value)
-print(f"Coverage map value in dB at the receiver position: {rx_value_db}")
-
-# Calculate the received power at the receiver from all transmitters
-# rx_tx1_pathloss = rx_value_db[0] # in dB
-pathloss_dict = {}
-for i in range(num_tx):
-    pathloss_dict[f"tx_{i}"] = rx_value_db[i]
-
-# Calculate the received power at the receiver from all transmitters
-Prx = {}
-for i in range(num_tx):
-    Prx[f"tx_{i}"] = Ptx + pathloss_dict[f"tx_{i}"]
-
-
-print(f"Received power at the receiver from tx1: {Prx['tx_0']:.2f} dBm")
-
-
-# Calculate the RSRP at the receiver from all transmitters
-
-for i in range(num_tx):
-    rsrp = calculate_rsrp(Prx[f"tx_{i}"], num_rb, bandwidth_mhz)
-    print(f"RSRP from tx_{i}: {rsrp:.2f} dBm")
-
-# Render the scene
-if show_scene:
-    print("{:^10} Rendering the scene...".format("WAIT"))
-    # scene.render_to_file(camera="scene-cam-0", filename="data/scene.png", resolution=[1280,720],num_samples=1000,show_devices=True,paths=paths,coverage_map=cm)
-    fig_scene = scene.render(camera="scene-cam-0", resolution=[1280,720],num_samples=1000,show_devices=True,coverage_map=cm)
-    print("{:^10} Scene rendered".format("DONE"))
+print("{:^10} Rendering the scene...".format("WAIT"))
+# scene.render_to_file(camera="scene-cam-0", filename="data/scene.png", resolution=[1280,720],num_samples=1000,show_devices=True,paths=paths,coverage_map=cm)
+fig_scene = scene.render(camera="scene-cam-1", resolution=[1280,720],num_samples=2048,show_devices=True,coverage_map=cm)
+print("{:^10} Scene rendered".format("DONE"))
 
 # show all the figures
 plt.show()
